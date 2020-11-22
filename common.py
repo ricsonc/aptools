@@ -67,3 +67,8 @@ def ensure(path):
 # def npload(x):
 #     #maybe this'll help with memory?
 #     return np.load(x, mmap_mode='r').astype(np.float32) 
+
+def discard(f):
+    def g(*args, **kwargs):
+        f(*args, **kwargs)
+    return g

@@ -18,6 +18,7 @@ import tifffile
 import torch
 from skimage import color
 from torch.nn import functional as F
+import imageio as ii
 
 class Postprocessor:
     def __init__(
@@ -25,19 +26,24 @@ class Postprocessor:
         work_dir,
         params = M(
             gradient_window = 32+1, #should be odd
-            dilation = 8, #computational savings...
+            dilation = 16, #computational savings...
             gradient_max = 95, #max percentile of light pollution
             # excl_box = [600, 2800, 2000, 3600], #miny, maxy, minx, maxx
 
             # excl_box = [500, 2400, 1200, 2300], #<- andro2
-            excl_box = [1950, 2600, 3000, 3750],
-            
+            # excl_box = [1950, 2600, 3000, 3750], <- tri
+            # excl_box = [ 750, 1600, 2150, 3100], #hatri
+            # excl_box = [1500, 3000, 0, 1000], #haorion
+            excl_box = [700, 1900, 2000, 3800],
             # excl_box = None,
+            
+            #mask_file = 'mask.png', #or None
+            mask_file = None,
+            
             gradient_iters = 5,
             outlier_factor = 3.0,
-            gamma = 2.0,
 
-            border_crop = 200,
+            border_crop = 400,
 
             tone_curve = [
                 (0.05, -0.02),
@@ -52,7 +58,7 @@ class Postprocessor:
             setattr(self, k, params[k])
 
     def subtract_gradient(self, x_): #what if we just subtract the linterpolation?
-        
+
         x = x_.copy()
 
         lum = utils.luminance(x)[...,0]
@@ -65,6 +71,13 @@ class Postprocessor:
             miny = minx = 1000000
             maxx = maxy = 0
         x[miny:maxy, minx:maxx] = np.nan
+
+        if self.mask_file is not None:
+            mask_img = ii.imread(f'{self.work_dir}/{self.mask_file}')
+            mask_img = mask_img[...,0] > 128
+            mask_img = mask_img.astype(np.float64)
+            mask_img[mask_img < 0.5] = np.nan
+            x *= mask_img[...,None]
             
         # due to computational constraints, compute an "atrous median"
         x_dila = x[::self.dilation,::self.dilation]
@@ -82,77 +95,112 @@ class Postprocessor:
         yx = np.stack((mys, mxs), axis = -1)
         yx_flat = yx.reshape(-1,2)[validity_flat]
         median_flat = medians.reshape(-1,3)[validity_flat]
+
+        #med_max = medians.copy()
+        #med_max[np.isnan(medians)] = 1000.0
+        #imshow((medians-med_max.min(axis=(0,1)))*400)
         
+        xs, ys = np.meshgrid(np.arange(x.shape[1]), np.arange(x.shape[0]))
+        yxs = np.stack((ys, xs), axis = -1).reshape(-1,2)
+
+        ### begin interp
+
         if False:
-
-            #a quadratic seems to be a decent way to estimate gradients..
-            # basis_fn = lambda z: cat((np.ones((z.shape[0],1)), z, z**2), axis=-1) #need to fix...
-            basis_fn = lambda z: cat((np.ones((z.shape[0],1)), z), axis=-1) #need to fix...
-            basis = basis_fn(yx_flat)
-            T, residuals = utils.fit_linear(basis, median_flat)
-
-            valid = np.ones((yx_flat.shape[0]), dtype = np.bool)
-
-            for i in range(self.gradient_iters):
-                T, residuals = utils.fit_linear(basis[valid], median_flat[valid])
-                residuals = np.linalg.norm(residuals, axis = -1)
-                valid[valid] &= residuals < np.median(residuals)*self.outlier_factor
-
-            #transform the entire image
-            xs, ys = np.meshgrid(np.arange(x.shape[1]), np.arange(x.shape[0]))
-            yxs = np.stack((ys, xs), axis = -1).reshape(-1,2)
-            out = basis_fn(yxs) @ T
-            out = out.reshape(x.shape)
-
-        elif True:
-
-            xs, ys = np.meshgrid(np.arange(x.shape[1]), np.arange(x.shape[0]))
-            yxs = np.stack((ys, xs), axis = -1).reshape(-1,2)
-
-            def mean_input(arr):
-                arr[np.isnan(arr)] = arr[~np.isnan(arr)].mean() #<- fill in annoying nans...
-            
-            out = griddata(
+            #what to do about nans...
+            fallback = griddata(
                 yx_flat,
                 median_flat,
                 yxs, 
+                method='nearest'
+            )
+
+            avg_iters = 100
+            dropout_prob = 0.01
+
+            print('computing average gradient')
+            out = 0
+            for i in tqdm(range(avg_iters)):
+                mask = np.random.random(yx_flat.shape[0]) < dropout_prob
+                out_ = griddata(
+                    yx_flat[mask],
+                    median_flat[mask],
+                    yxs,
+                    method='linear'
+                )
+                out += np.where(
+                    np.isnan(out_),
+                    fallback,
+                    out_
+                )
+            out /= avg_iters
+            
+        elif False:
+            med_num = np.zeros_like(median_flat)
+            med_denom = np.zeros_like(median_flat)
+            avg_iters = 1000
+            dropout_prob = 0.05
+
+            print('computing average gradient')
+            for i in tqdm(range(avg_iters)):
+                mask = np.random.random(yx_flat.shape[0]) < dropout_prob
+                out_ = griddata(
+                    yx_flat[mask],
+                    median_flat[mask],
+                    yx_flat[~mask],
+                    method='linear'
+                )
+                med_num[~mask] += out_
+                med_denom[~mask] += ~np.isnan(out_)
+
+            med_refit = med_num/med_denom
+
+            fallback = griddata(
+                yx_flat,
+                median_flat,
+                yxs, 
+                method='nearest'
+            )
+
+            out = griddata(
+                yx_flat,
+                med_refit,
+                yxs, 
                 method='linear'
             )
-            mean_input(out)
-            
-            out = out.reshape(x.shape)
-
+            out = np.where(np.isnan(out), fallback, out)
         else:
+            #fit quadratic...
 
-            M = yx_flat.shape[0]
-            random_mask = np.random.random(M) < (5000 / M)
-            out = Rbf(
-                yx_flat[random_mask][...,0], yx_flat[random_mask][...,1], median_flat[random_mask],
-                function='thin-plate',
-                # function='gaussian',
-                smooth = 0.0, #<- adjust carefully ok this does bad things..
-                mode = 'N-D',
-            )
+            def basis_fn(yx):
+                y = yx[...,0]
+                x = yx[...,1]
+                ones = np.ones(y.shape)
+                return np.stack((x, y, x**2, y**2, x*y, ones), axis=-1)
 
-            self.coarseness = 10
-            H,W,_ = x.shape
-            Hc,Wc = H//self.coarseness, W//self.coarseness
-            
-            mxs, mys = np.meshgrid(np.linspace(0,W-1,Wc), np.linspace(0,H-1,Hc))
-            gradient = out(mys, mxs)
-            
-            out = F.upsample(
-                torch.from_numpy(gradient).reshape(1,Hc,Wc,3).permute(0,3,1,2),
-                size = (H,W),
-                mode='bilinear',
-                align_corners = True,
-            )[0].permute(1,2,0).numpy()
-            #let's try Rbf thin plate method again..
-            
+            T, pred = utils.fit_transform_linear(basis_fn(yx_flat), median_flat)
+            res = median_flat-pred
+
+            resstd = res.std(axis=0)
+            print('first pass, resstd is', resstd)
+            res_clip = res.copy()
+            for i in range(3):
+                res_clip[...,i] = np.clip(res_clip[...,i], -resstd[i], resstd[i])
+            median_flat_clip = pred + res_clip
+
+            T, res = utils.fit_linear(basis_fn(yx_flat), median_flat_clip)
+            print('second pass, resstd is', res.std(axis=0))
+
+            #gen out
+            out = basis_fn(yxs) @ T
+
+        ### end interp
+        out[np.isnan(out)] = out[~np.isnan(out)].mean()
+
+        out = out.reshape(x.shape)
 
         #i should be dividing actually...
         #this might be helpful for debugging
-        # for c in range(3): plt.axes().contour(out[...,c], levels=10, colors=['red', 'green', 'blue'][c])
+        # for c in range(3): plt.axes().contour(out[...,c], levels=20, colors=['red', 'green', 'blue'][c])
         # imshow_norm(out)
         # st()
 
@@ -165,14 +213,14 @@ class Postprocessor:
 
     def global_tonemap(self, x):
 
-        # x_ = x.copy()
-
         #5 and 99.5
         lb = 10
         ub = 99.5
         # gamma adjustment
         x = utils.renormalizep(x, lb, ub) #<- very interesting...5 works, 10??
-        xg = x**(1/self.gamma)
+        # xg = x**(1/self.gamma)
+        xg = utils.transfer_function(x)
+        
         xg = utils.renormalizep(xg, lb, ub)
 
         xt = xg
@@ -193,11 +241,12 @@ class Postprocessor:
         # plt.plot(curve(np.linspace(0,1,100))); plt.show()
         xc = curve(xt)
 
+        st()
+
         border = 400
         miny, maxy, minx, maxx = self.excl_box
         xc_crop = xc[miny-border:maxy+border, minx-border:maxx+border]
         # imshow(xc)
-        tifffile.imsave('triangulum/triangulum.tiff', xc_crop)
         st() #<- to tiff?
 
         return xc
@@ -214,7 +263,7 @@ class Postprocessor:
         c = self.border_crop
         x = x[c:-c,c:-c] #crop out some of the unstacked area
         
-        x = self.subtract_gradient(x)
+        x = self.subtract_gradient(x) #uhh
         x = self.global_tonemap(x)
         
         x = self.star_shrink(x)

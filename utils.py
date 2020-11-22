@@ -74,6 +74,8 @@ def load_raw(path, profile=True, fmul = 4.0):
         if os.path.exists(flat_path):
             print('LOADING FLAT')
             load_raw.cache2 = np.load(flat_path)
+        else:
+            assert False
 
     flat = load_raw.cache2
     if flat is not None:
@@ -255,3 +257,44 @@ def renormalizep(x, p_low, p_hi, axis=(0,1)):
     x = x-np.percentile(x, p_low, axis = axis)
     x /= np.percentile(x, p_hi, axis=axis)
     return np.clip(x,0,1)
+
+def gamma_curve(gamma = 2.4, k = 12.92):
+    ''' default parameters define the sRGB gamma'''
+    
+    '''
+    the two parts of the curve are
+    f(x) = kx for x <= z
+    and
+    h(x) = (1+w)x^(1/g)-w
+
+    where w, z are constants such that...
+    f(z) = h(z)
+    f'(z) = h'(z)
+
+    so we have a system of two qeustions...
+    kz = (1+w)z^(1/g)-w
+    k = (1+w)/g z^(1/g-1)
+
+    let's fix w first...
+    kz = z^(1/g) + w(z^1/g-1)
+    w = [ kz - z^(1/g) ] / (z^1/g-1)
+
+    k = { 1 + [ kz - z^(1/g) ] / (z^1/g-1) } /g * z^(1/g-1)
+    k = kz/g
+    z = g
+    ^ this can' tbe right...
+    
+    '''
+
+    #nonlinearity ends when slope = d/dx x^(1/gamma) = (1/gamma) x^(1/gamma-1)
+    # k gamma = x^(1/gamma-1)
+    pass
+
+def transfer_function(x):
+    #the standard srgb transfer... i don't really get this
+    return np.where(
+        x <= 0.0031308,
+        12.92 * x,
+        1.055*x**(1/2.4) - 0.055
+    )
+        

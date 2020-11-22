@@ -15,6 +15,9 @@ from tqdm.contrib.itertools import product
 from tqdm import tqdm
 from tqdm.contrib import tenumerate
 import tifffile
+import imageio as ii
+from scipy import misc
+import random
 
 class Stacker:
     def __init__(
@@ -24,12 +27,37 @@ class Stacker:
             # higher noise mul = more denoising, less robust
             # lower noise mul = more robustness, less denoising
             noise_mul = 32.0, # fudge factor (also try 4, 16, 64)
-            patch_size = 32, # <- according to hasinoff...
-        )):
+            #patch_size = 32, # <- according to hasinoff...
+            patch_size = 32,
+
+        ),
+        custom_name = 'out',
+        method = 'fuse',
+    ):
+
+        self.custom_name = custom_name
+        self.method = method
 
         self.work_dir = work_dir
         for k in params:
             setattr(self, k, params[k])
+
+    def fuse_clip(self, patches, iters=2, k=2):
+        valid = np.ones_like(patches)
+
+        for _ in range(iters):
+            #compute the masked mean
+            num = (valid*patches).sum(axis=0)
+            denom = valid.sum(axis=0)+1E-9
+            mu = num/denom
+
+            diff = patches-mu[None]
+            stds = (diff**2).sum(axis=0)**0.5/np.sqrt(patches.shape[0])
+            valid = np.abs(diff) < stds[None]*k
+
+            #print('valid mean is', valid.mean())
+
+        return mu
 
     def fuse(self, patches):
         avg = patches.mean(axis = (0))
@@ -91,10 +119,13 @@ class Stacker:
             ]
 
             patchws = [imgs[np.index_exp[:,c]+patch_slice] * window_fn[None] for c in range(C)]
-            
-            from pathos.pools import ProcessPool 
-            pool = ProcessPool(nodes=3)
-            results = pool.map(self.fuse, patchws)
+
+            if True:
+                from pathos.pools import ProcessPool 
+                pool = ProcessPool(nodes=3)
+                results = pool.map(self.fuse, patchws)
+            else:
+                results = [getattr(self, self.method)(patchw) for patchw in patchws]
 
             for c in range(C):
                 out[c][patch_slice] += results[c]
@@ -103,4 +134,67 @@ class Stacker:
         out = np.clip(out, 0.0, 1.0).transpose(1,2,0)
         np.save(f'{self.work_dir}/stacked/out', out)
         tifffile.imwrite(f'{self.work_dir}/stacked/out.tiff', out)
+        ii.imsave(f'{self.work_dir}/stacked/{self.custom_name}.jpg', np.round(out*255).astype(np.uint8), quality=100)
 
+if __name__ == '__main__':
+    #let's test it out...
+    
+    face_ = misc.face() #an RGB image
+    N = 20
+    sigma = 100
+    sigma2 = 500
+    
+    Nblur = 4
+    Nalign = 4
+
+    #1. add misalignments
+    #2. add blurring
+
+    np.random.seed(0)
+    
+    paths = []
+    print('generating fake data')
+    for i in tqdm(range(N)):
+        face = (
+            face_.astype(np.float32) +
+            np.random.randn(*face_.shape) * sigma +
+            utils.blur(np.random.randn(*face_.shape), 7) * sigma2
+        )
+
+        if i < Nblur:
+            face = utils.blur(face, [1,2,3,4][i])
+        elif Nblur <= i < Nalign+Nblur:
+            face = np.roll(face, [5,7,9,3][i-Nblur], axis = 0)
+            face = np.roll(face, [2,-4,5,-6][i-Nblur], axis = 1)
+        else:
+            face = utils.blur(face, 0.5)
+            L = 2
+            face = np.roll(face, random.randint(-L,L), axis=0)
+            face = np.roll(face, random.randint(-L,L), axis=1)
+
+        #let's not clip actually...
+        #face = np.clip(face, 0.0, 255.0)/255.0
+        face = face/255.0
+        
+        path = f'debug/testimgs/{i:02d}.npy'
+        np.save(path, face)
+        ii.imsave(path.replace('npy', 'jpg'), np.round(np.clip(face,0,1)*255.0).astype(np.uint8), quality=98)
+        paths.append(path)
+    
+    bar = Stacker('debug', method='fuse', custom_name='hasinoff32')
+    bar.patch_size=64
+    bar(paths)
+
+    bar.custom_name='hasinoff8'
+    bar.noise_mul=1.0
+    bar(paths)
+    
+    bar.custom_name='hasinoff128'
+    bar.noise_mul=10000.0
+    bar(paths)
+    
+    
+    foo = Stacker('debug', method='fuse_clip', custom_name='clipavg')
+    foo.patch_size=256
+    foo(paths)
+    

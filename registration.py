@@ -17,9 +17,13 @@ class Register:
             work_dir,
             params = M(
 
-                max_stars = 1000, #take this many stars at most
-                
+                max_stars = 500, #take this many stars at most
                 nneighbors = 500, #must be even (1k before)
+
+                #more stars
+                # max_stars = 5000, #take this many stars at most
+                # nneighbors = 1000, #must be even (1k before)
+                
                 ba_max_ratio = 0.99, 
                 cb_max_ratio = 0.99,
                 epsilon = 1E-3, #match tol

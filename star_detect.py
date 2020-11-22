@@ -23,9 +23,13 @@ class Detector:
                 #unround_threshold = 1.5, #discard less round than this..
 
                 #less conservative
-                lum_pthresh = 96,
-                unround_threshold = 2.0,
+                # lum_pthresh = 96,
+                # unround_threshold = 2.0,
                 #95, 1.5 also works
+
+                # bloop /oneb -- roughly 10k or 20k is a good number?
+                lum_pthresh = 99.5,
+                unround_threshold = 2.5,
             )):
 
         self.work_dir = work_dir
@@ -91,9 +95,9 @@ class Detector:
 
         out_path = path.split('/')[-1].split('.')[0]
         out_path = f'{self.work_dir}/detections/{out_path}'
-        if os.path.exists(out_path+'.npy'):
-            print(f'skipping {out_path} cause already done')
-            return
+        # if os.path.exists(out_path+'.npy'):
+        #     print(f'skipping {out_path} cause already done')
+        #     return
         
         print(f'loading and preprocessing {path}')
         img = utils.load_raw(path)
@@ -125,7 +129,8 @@ class Detector:
         print(f'saving to {out_path}')
         np.save(out_path, balls)
 
-        # scatterr(balls); imshow(np.clip(lum*10, 0,1)) #<- plotting
+        # st()
+        # scatterr(balls[-1000:]); imshow(np.clip(lum*10, 0,1)) #<- plotting
         return balls
 
     def test(self):

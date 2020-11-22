@@ -53,10 +53,12 @@ I suspect that since estimating flow on natural photographs with handshake and f
 
 Step 5: postprocessing
 
-The first step in postprocessing is to remove any remastering nusiance patterns in the data, masterly light pollution. In order to do this, I mark all "bright" regions of the image as invalid, and run a large stride+dilation median filter over the entire image. There is also a user specifiable bbox of pixels to ignore. I interpolate the result over the entire image, and the result is a pretty good "background" field, with no stars or objects of interest. Initially, for this I tried just fitting a linear or quadratic, in the hopes that light pollution gradients could be modeled with a very simple form. However, in order to remove small amounts of remastering vignette artifacts, the current nonparametric interpolation strategy is better, although this comes at the risk of filtering out large, faint nebulae if they aren't excluded by the user.
+The first step in postprocessing is to remove any remastering nusiance patterns in the data, masterly light pollution. In order to do this, I mark all "bright" regions of the image as invalid, and run a large stride+dilation median filter over the entire image. There is also a user specifiable bbox of pixels to ignore. I interpolate the result over the entire image, and the result is a pretty good "background" field, with no stars or objects of interest. 
 
 <img src="https://github.com/ricsonc/aptools/blob/master/readme_imgs/gradient.png" width="500">
-Contours of the estimated nusiance RGB gradient.
+Contours of the estimated nusiance RGB gradient. (Note -- this image is out of date, new gradient method is much better).
+
+There are 3 methods implemented for "interpolation". The first is a simple linear interpolation, which works the best for small, compact objects and when the flat frames aren't great. It has trouble dealing with outliers. The second method is an improvement over linear interp, where I subsample a small fraction of background points, interpolate, use some RANSAC-like strategy to decide which of the background are outliers. The third method fits a quadratic while clipping residuals, and is the most robust to outliers, but if your flat frames are not good enough, there will be problems.
 
 The final preprocessing step clips the extremes of the images, applies gamma correction, and then applies a further user-specifiable spline tone curve. Then a minimal amount of manual editing or corrections are done in GIMP.
 
@@ -68,3 +70,20 @@ A single exposure computed to final output.
 <img src="https://github.com/ricsonc/aptools/blob/master/readme_imgs/triangulum.jpg" width="500">
 
 (Triangulum galaxy, 150 exposures of 30 seconds @ 200mm f/2.8)
+
+<img src="https://github.com/ricsonc/aptools/blob/master/readme_imgs/single_exposure_bl.jpg" width="500">
+<img src="https://github.com/ricsonc/aptools/blob/master/readme_imgs/barnards_loop.jpg" width="500">
+
+(Orion Complex, 150 exposures of 30 seconds @ 50mm f/1.8)
+
+---
+
+Usage tips:
+
+1. Flat frames are pretty critical. Dark frames are not really necessary.
+2. It's tricky to install the LMMSE demosaicking package. DCB is an ok substitute if you can't get it working.
+3. In star_detect.py, tune lum_pthresh so that you no more than 25k stars -- otherwise it's slow.
+4. In registration.py, start with max_stars=2000, reduce to 1000 or 500 if you get huge residuals (>1px).
+5. In warping.py, set USE_TP to true if you want a nonlinear warp. This sometimes causes overshoot isues.
+6. In post.py, you can specify an excl_box OR, even better, an image containing a mask of the object.
+6. In post.py, adjust border_crop until no image edges are visible.

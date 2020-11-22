@@ -2,8 +2,12 @@ from common import *
 import utils
 from ipdb import set_trace as st
 from glob import glob
+from tqdm import tqdm
 
-flats = glob('flat/*')
+#work_dir='haorion'
+work_dir='oneb'
+
+flats = glob(f'{work_dir}/flats/*')
 
 def standardize(flat):
     flat += flat[:,::-1] #flip vert and hor
@@ -12,7 +16,7 @@ def standardize(flat):
     return flat
 
 total = 0
-for flat in flats:
+for flat in tqdm(flats):
     flat = utils.load_raw(flat, profile=False, fmul=0.1) #expect around 1/40 the dark current due to exposure time
     sflat = standardize(flat)
     total += sflat
@@ -22,7 +26,7 @@ total /= len(flats)
 #can get a decent flat here by blurring with a good size
 master_flat = utils.blur(total, 20.0)
 master_flat /= master_flat.max(axis=(0,1))
-np.save('flat.npy', master_flat)
+np.save(f'{work_dir}/flat.npy', master_flat)
 
 #what happens if we teim the edgese...
 total = utils.blur(total, 10.0)
@@ -46,7 +50,7 @@ T, pred = utils.fit_transform_linear(basis_fn(r2), total.reshape(-1,3))
 # st()
 
 gt = total.reshape(-1,3)
-mask = np.random.random(r2.shape[0]) < 0.01 #keep 1%
+mask = np.random.random(r2.shape[0]) < 0.001 #keep 1%
 r = r2**0.5
 r = r[mask]
 gt = gt[mask]

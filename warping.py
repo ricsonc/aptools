@@ -29,28 +29,37 @@ class Warp:
     def warp(self, reg, raw):
         T, residuals = utils.fit_affine(reg[...,:2], reg[...,2:])
 
-        out = Rbf( #<- thin plates are crazy... be very careful
-            reg[...,0], reg[...,1], residuals,
-            function='thin-plate',
-            smooth = 2000000000.0, # <- yes this looks large... but it's correct.
-            mode = 'N-D',
-        )
+        USE_TP = False
 
-        resres = np.linalg.norm(out(reg[...,0], reg[...,1]) - residuals, axis=-1).mean()
+        if USE_TP:
+            out = Rbf( #<- thin plates are crazy... be very careful
+                reg[...,0], reg[...,1], residuals,
+                function='thin-plate',
+                smooth = 2000000000.0, # <- yes this looks large... but it's correct.
+                mode = 'N-D',
+            )
+
+            resres = np.linalg.norm(out(reg[...,0], reg[...,1]) - residuals, axis=-1).mean()
+        else:
+            resres = np.linalg.norm(residuals, axis=-1).mean()
+            
         print('average residual is', resres)
 
         H,W,_ = raw.shape
         Hc,Wc = H//self.coarseness, W//self.coarseness
         mxs, mys = np.meshgrid(np.linspace(0,W-1,Wc), np.linspace(0,H-1,Hc))
-        flow = out(mys, mxs)
 
-        flow_mag = np.linalg.norm(flow**2, axis=-1)
-        if flow_mag.mean() > 0.5 and resres > np.linalg.norm(residuals,axis=-1).mean():
-            print('your smoothing parameter is set too low and is causing overshoot issues!!')
-            imshow(np.clip(flow_mag, 0, 2)/2)
-            st()
-        # st()
 
+        if USE_TP:
+            flow = out(mys, mxs)
+            flow_mag = np.linalg.norm(flow**2, axis=-1)
+            if flow_mag.mean() > 0.5 and resres > np.linalg.norm(residuals,axis=-1).mean():
+                print('your smoothing parameter is set too low and is causing overshoot issues!!')
+                imshow(np.clip(flow_mag, 0, 2)/2)
+                st()
+        else:
+            flow = 0
+    
         flow += affine(T, np.stack((mys, mxs), axis = -1).reshape(-1,2)).reshape(Hc,Wc,-1)
         flow_up = F.upsample(
             torch.from_numpy(flow).reshape(1,Hc,Wc,2).permute(0,3,1,2),
