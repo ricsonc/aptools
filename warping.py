@@ -19,7 +19,10 @@ class Warp:
     def __init__(self,
         work_dir,
         params = M(
-            coarseness = 10
+            coarseness = 10,
+            use_thinplate = False,
+            thinplate_smoothing=0,
+            min_stars = 20,
         )):
 
         self.work_dir = work_dir
@@ -29,33 +32,35 @@ class Warp:
     def warp(self, reg, raw):
         T, residuals = utils.fit_affine(reg[...,:2], reg[...,2:])
 
-        USE_TP = False
-
-        if USE_TP:
-            out = Rbf( #<- thin plates are crazy... be very careful
+        if self.use_thinplate:
+            out = Rbf( #<- thin plates can overshoot a bunch, be very careful
                 reg[...,0], reg[...,1], residuals,
                 function='thin-plate',
-                smooth = 2000000000.0, # <- yes this looks large... but it's correct.
+                smooth = self.thinplate_smoothing, #400M is sometimes good?
                 mode = 'N-D',
             )
+            # i need something which actually works...
 
-            resres = np.linalg.norm(out(reg[...,0], reg[...,1]) - residuals, axis=-1).mean()
+            res_sizes = np.linalg.norm(out(reg[...,0], reg[...,1]) - residuals, axis=-1)
         else:
-            resres = np.linalg.norm(residuals, axis=-1).mean()
+            res_sizes = np.linalg.norm(residuals, axis=-1)
+
+        resres = res_sizes.mean()
+        maxres = res_sizes.max()
             
-        print('average residual is', resres)
+        print('avg, max res is ', resres, maxres)
 
         H,W,_ = raw.shape
         Hc,Wc = H//self.coarseness, W//self.coarseness
         mxs, mys = np.meshgrid(np.linspace(0,W-1,Wc), np.linspace(0,H-1,Hc))
 
 
-        if USE_TP:
+        if self.use_thinplate:
             flow = out(mys, mxs)
-            flow_mag = np.linalg.norm(flow**2, axis=-1)
+            flow_mag = np.linalg.norm(flow, axis=-1)
             if flow_mag.mean() > 0.5 and resres > np.linalg.norm(residuals,axis=-1).mean():
                 print('your smoothing parameter is set too low and is causing overshoot issues!!')
-                imshow(np.clip(flow_mag, 0, 2)/2)
+                imshow(np.clip(flow_mag, 0, 4)/4)
                 st()
         else:
             flow = 0
@@ -99,7 +104,8 @@ class Warp:
         
         if len(reg_path) == 1:
             reg = np.load(reg_path[0])
-            if reg.shape[0] < 100: #min needed for "good" registration:
+
+            if reg.shape[0] < self.min_stars: #min needed for "good" registration:
                 print(f'giving up for {reg_path}')
                 return 
             out = self.warp(reg, raw)

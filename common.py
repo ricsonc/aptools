@@ -7,19 +7,23 @@ def scatter(yx):
     plt.scatter(yx[...,1], yx[...,0], s=1, c='red')
 
 def scatterk(yx, **kwargs):
-    plt.scatter(yx[...,1], yx[...,0], s=1, **kwargs)
+    plt.scatter(yx[...,1], yx[...,0], s=4, **kwargs)
 
 def scatterr(yxr):
-    plt.scatter(yxr[...,1], yxr[...,0], s=5*yxr[...,2], linewidth=1, facecolors='none', edgecolors='r')
+    plt.scatter(yxr[...,1], yxr[...,0], s=20*yxr[...,2], linewidth=1, facecolors='none', edgecolors='r')
 
-def imshow(x, **kwargs):
-    plt.imshow(x, **kwargs)
+def imshow(x, ax = None, **kwargs):
+    if ax:
+        p = ax
+    else:
+        p = plt
+    p.imshow(x, **kwargs)
     plt.show()
 
-def imshow_norm(x):
+def imshow_norm(x, **kwargs):
     x = x-x.min()
     x = x / x.max()
-    imshow(x)
+    imshow(x, **kwargs)
     
 def imshow_tm(x):
     #tonemap

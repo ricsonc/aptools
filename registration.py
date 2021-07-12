@@ -24,16 +24,16 @@ class Register:
                 # max_stars = 5000, #take this many stars at most
                 # nneighbors = 1000, #must be even (1k before)
                 
-                ba_max_ratio = 0.99, 
+                ba_max_ratio = 0.99,
                 cb_max_ratio = 0.99,
                 epsilon = 1E-3, #match tol
                 
                 min_abs_diff = 1, #abs and rel diff for match success
                 min_rel_diff = 1.4,
 
-                ransac_iters = 10,
+                ransac_iters = 50,
                 ransac_keep_percentile = 99,
-                linear_fit_tol = 3.0, #pixels tol on linear fit
+                linear_fit_tol = 2.0, #pixels tol on linear fit
             )):
 
         self.work_dir = work_dir
@@ -150,11 +150,14 @@ class Register:
                 valid_criteria = residuals < np.percentile(residuals, self.ransac_keep_percentile)
             valid[valid] &= valid_criteria
 
+            if residuals[valid_criteria].mean() < self.linear_fit_tol/2:
+                break
+
         source = source[valid]
         target = target[valid]
         print(f'{source.shape[0]} inlier stars, mean error {residuals.mean():.3f} px')
         print(T)
-        return source, target
+        return source, target, T
     
     def register(self, source, target):
         source, target = source[...,:2], target[...,:2] #don't make use of std
@@ -166,19 +169,27 @@ class Register:
         source_matched = source[matches[...,0]]
         target_matched = target[matches[...,1]]
 
-        scatterk(source_matched, c='red')
-        scatterk(target_matched, c='blue')
-        corresp = mmap(lambda st: mpl.path.Path(np.stack(st,axis=0)[:,::-1]), zip(source_matched, target_matched))
-        patches = mpl.collections.PathCollection(corresp, linewidths=1, facecolors='none', alpha=0.5)
+        # scatterk(source_matched, c='red')
+        # scatterk(target_matched, c='blue')
+        # corresp = mmap(lambda st: mpl.path.Path(np.stack(st,axis=0)[:,::-1]), zip(source_matched, target_matched))
+        # patches = mpl.collections.PathCollection(corresp, linewidths=1, facecolors='none', alpha=0.5)
         # plt.axes().add_artist(patches); plt.show()
         # st()
 
         #this step fits a linear transform and discards outliers
-        source_lin, target_lin = self.ransac_linear(source_matched, target_matched)
+        source_lin, target_lin, T = self.ransac_linear(source_matched, target_matched)
+
+        # source_at_target = dehom(hom(source_lin) @ T)
+        # scatterk(source_at_target, c='red')
+        # scatterk(target_lin, c='blue')
+        # corresp = mmap(lambda st: mpl.path.Path(np.stack(st,axis=0)[:,::-1]), zip(source_at_target, target_lin))
+        # patches = mpl.collections.PathCollection(corresp, linewidths=1, facecolors='none', alpha=0.5)
+        # plt.axes().add_artist(patches); plt.axes().set_aspect('equal'); plt.show()
+        # st()
 
         return cat((source_lin, target_lin), axis=1) #Nx4
 
-    def __call__(self, paths):
+    def __call__(self, paths, other=None):
         stars = mmap(np.load, paths)
 
         #sort by #stars, descending
@@ -187,14 +198,30 @@ class Register:
             key = lambda x: -x[1].shape[0]
         ))
 
-        stars = [star[-self.max_stars:] for star in stars]
+        if other is None:
+            stars = [star[-self.max_stars:] for star in stars]
+            for i, star in enumerate(stars[1:]):
+                matches = self.register(stars[0], star)
+                name0 = os.path.basename(paths[0]).replace('.npy', '')
+                namei = os.path.basename(paths[i+1]).replace('.npy', '')
+                out_path = f'{self.work_dir}/registration/{name0}-{namei}'
+                np.save(out_path, matches)
+        else:
+            other_stars = mmap(np.load, other)
+            other_paths, other_stars = zip(*sorted(
+                zip(other, other_stars),
+                key = lambda x: -x[1].shape[0]
+            ))
+            refstars = other_stars[0][-self.max_stars:]
+            stars = [star[-self.max_stars:] for star in stars]
 
-        for i, star in enumerate(stars[1:]):
-            matches = self.register(stars[0], star)
-            name0 = os.path.basename(paths[0]).replace('.npy', '')
-            namei = os.path.basename(paths[i+1]).replace('.npy', '')
-            out_path = f'{self.work_dir}/registration/{name0}-{namei}'
-            np.save(out_path, matches)
+            for i, star in enumerate(stars):
+                matches = self.register(refstars, star)
+                name0 = 'rel'
+                namei = os.path.basename(paths[i]).replace('.npy', '')
+                out_path = f'{self.work_dir}/registration/{name0}-{namei}'
+                np.save(out_path, matches)
+            
             
 
 if __name__ == '__main__':

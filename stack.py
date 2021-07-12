@@ -12,6 +12,7 @@ from scipy.interpolate import Rbf
 import os
 from scipy.fft import fftn, ifftn, set_workers
 from tqdm.contrib.itertools import product
+# from itertools import product
 from tqdm import tqdm
 from tqdm.contrib import tenumerate
 import tifffile
@@ -24,12 +25,9 @@ class Stacker:
         self,
         work_dir,
         params = M(
-            # higher noise mul = more denoising, less robust
-            # lower noise mul = more robustness, less denoising
             noise_mul = 32.0, # fudge factor (also try 4, 16, 64)
-            #patch_size = 32, # <- according to hasinoff...
             patch_size = 32,
-
+            cache_path = '.cache',
         ),
         custom_name = 'out',
         method = 'fuse',
@@ -97,7 +95,7 @@ class Stacker:
         padW = np.ceil(W/HPS).astype(np.int)*HPS-W
         paddedH, paddedW = H+padH+PS, W+padW+PS
         
-        imgs = np.memmap('.cache', dtype=np.float32, mode='w+', shape=(N,C,paddedH,paddedW))
+        imgs = np.memmap(self.cache_path, dtype=np.float32, mode='w+', shape=(N,C,paddedH,paddedW))
         for i, path in tenumerate(paths):
             imgs[i] = np.pad(
                 np.load(path, mmap_mode='r').transpose((2,0,1)),
@@ -111,7 +109,30 @@ class Stacker:
         foo = lambda z: 0.5 - 0.5*np.cos( 2 * np.pi * (z.astype(np.float32)+0.5)/PS)
         window_fn = foo(xs) * foo(ys)
 
+        ####
+        # from pathos.pools import ProcessPool
+        # pool = ProcessPool(nodes=20)
+        
+        # patch_slices = [
+        #     np.index_exp[
+        #         i*HPS:(i+2)*HPS,
+        #         j*HPS:(j+2)*HPS,
+        #     ]
+        #     for (i,j) in product(range(paddedH//HPS-1), range(paddedW//HPS-1))
+        # ]
+            
+        # patchws = [
+        #     imgs[np.index_exp[:,c]+patch_slice] * window_fn[None]
+        #     for patch_slice in tqdm(patch_slices)
+        #     for c in range(C)
+        # ]
 
+        # results = pool.map(self.fuse, patchws)
+
+        # for i, patch_slice in tenumerate(patch_slices):
+        #     for c in range(C):
+        #         out[c][patch_slice] += results[i*3+c]
+        
         for (i, j) in product(range(paddedH//HPS-1), range(paddedW//HPS-1)):
             patch_slice = np.index_exp[
                 i*HPS:(i+2)*HPS,
@@ -135,6 +156,7 @@ class Stacker:
         np.save(f'{self.work_dir}/stacked/out', out)
         tifffile.imwrite(f'{self.work_dir}/stacked/out.tiff', out)
         ii.imsave(f'{self.work_dir}/stacked/{self.custom_name}.jpg', np.round(out*255).astype(np.uint8), quality=100)
+        os.remove(self.cache_path)
 
 if __name__ == '__main__':
     #let's test it out...

@@ -8,10 +8,11 @@ from scipy import spatial
 from common import *
 import exifread
 import rawpy
-import lensfunpy
-from lensfunpy.util import remapScipy
+# import lensfunpy
+# from lensfunpy.util import remapScipy
 import os
 from scipy.optimize import leastsq, least_squares
+from tqdm import tqdm
 
 def prepare_dark(paths):
     darks = np.stack([x.raw_image for x in mmap(rawpy.imread, paths)], axis=0).mean(axis=0)
@@ -75,7 +76,7 @@ def load_raw(path, profile=True, fmul = 4.0):
             print('LOADING FLAT')
             load_raw.cache2 = np.load(flat_path)
         else:
-            assert False
+            assert False, 'probably need a flat file?'
 
     flat = load_raw.cache2
     if flat is not None:
@@ -85,33 +86,33 @@ def load_raw(path, profile=True, fmul = 4.0):
     np.save(path_, demosaiced.astype(np.float32))
     return demosaiced
     
-    #ignore here
+    #ignore below... i didn't have much success using lensfunpy
     
-    # correct for lens distortion .. NOT IMPLEMENTED    
-    H,W,_ = demosaiced.shape
-    db = lensfunpy.Database()
-    cam = db.find_cameras(tags['Image Make'].values, tags['Image Model'].values)[0]
-    lens = db.find_lenses(cam, 'Nikon', 'Nikkor 80-200mm f/2.8 ED')[0]
+    # # correct for lens distortion .. NOT IMPLEMENTED    
+    # H,W,_ = demosaiced.shape
+    # db = lensfunpy.Database()
+    # cam = db.find_cameras(tags['Image Make'].values, tags['Image Model'].values)[0]
+    # lens = db.find_lenses(cam, 'Nikon', 'Nikkor 80-200mm f/2.8 ED')[0]
 
-    mod = lensfunpy.Modifier(lens, cam.crop_factor, W, H)
-    mod.initialize(
-        float(tags['EXIF FocalLength'].values[0]),
-        float(tags['EXIF FNumber'].values[0]),
-        1000.0,
-        pixel_format = np.float64
-    )
+    # mod = lensfunpy.Modifier(lens, cam.crop_factor, W, H)
+    # mod.initialize(
+    #     float(tags['EXIF FocalLength'].values[0]),
+    #     float(tags['EXIF FNumber'].values[0]),
+    #     1000.0,
+    #     pixel_format = np.float64
+    # )
 
-    # # remapScipy(??, mod.apply_geometry_distortion()) #<- geom correction -- let's not bother
-    # st()
-    status = mod.apply_color_modification(demosaiced)
-    assert status
-    # st()
+    # # # remapScipy(??, mod.apply_geometry_distortion()) #<- geom correction -- let's not bother
+    # # st()
+    # status = mod.apply_color_modification(demosaiced)
+    # assert status
+    # # st()
 
-    #i think clipping here is "acceptable"
-    demosaiced = np.clip(demosaiced, 0.0, 1.0)
+    # #i think clipping here is "acceptable"
+    # demosaiced = np.clip(demosaiced, 0.0, 1.0)
     
-    np.save(path_, demosaiced)
-    return demosaiced
+    # np.save(path_, demosaiced)
+    # return demosaiced
 
 load_raw.cache = None
 load_raw.cache2 = None
@@ -298,3 +299,58 @@ def transfer_function(x):
         1.055*x**(1/2.4) - 0.055
     )
         
+def generate_flat(files):
+    
+    def standardize(flat):
+        flat += flat[:,::-1] #flip vert and hor
+        flat += flat[::-1,] 
+        flat /= flat.mean(axis=(0,1)) #mean brightness = 1
+        return flat
+
+    total = 0
+    for flat in tqdm(files):
+        flat = load_raw(flat, profile=False, fmul=0.1)
+        #expect around 1/40 the dark current due to exposure time        
+        sflat = standardize(flat)
+        total += sflat
+
+    total /= len(files)
+
+    #can get a decent flat here by blurring with a good size
+    master_flat = blur(total, 20.0)
+    master_flat /= master_flat.max(axis=(0,1))
+
+    work_dir = files[0].split('/')[0]
+    np.save(f'{work_dir}/flat.npy', master_flat)
+
+    # below is only for visualization purposes...
+    print('vignetting looks like this: ')
+    
+    #trim the edges
+    total = blur(total, 10.0)
+    total = total[20:-20,20:-20] # HW3
+
+    H,W,_ = total.shape
+    mxs, mys = np.meshgrid(np.arange(W), np.arange(H))
+
+    #the center of the image is technically (H-1)/2
+    dx = mxs-(W-1)/2
+    dy = mys-(H-1)/2
+    # let's use 1000 as the fudge factor on pixels
+    r2 = (dx**2 + dy**2).reshape(-1,1) / 1000000.0
+
+    #a polynomial basis is popular...
+    # basis_fn = lambda z: cat((np.ones((z.shape[0],1)), z, z**2, z**3), axis=-1) 
+    # T, pred = fit_transform_linear(basis_fn(r2), total.reshape(-1,3))
+
+    # st()
+
+    gt = total.reshape(-1,3)
+    mask = np.random.random(r2.shape[0]) < 0.001 #keep 1%
+    r = r2**0.5
+    r = r[mask]
+    gt = gt[mask]
+    plt.scatter(r, gt[:,0], c='red', s=1, alpha=0.1)
+    plt.scatter(r, gt[:,1], c='green', s=1, alpha=0.1)
+    plt.scatter(r, gt[:,2], c='blue', s=1, alpha=0.1)
+    plt.show()

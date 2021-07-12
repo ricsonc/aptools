@@ -19,17 +19,8 @@ class Detector:
                 min_sig = 1.0, 
                 max_sig = 6.0,
                 Nsig = 3,
-                #lum_pthresh = 98, #bright thresh for star
-                #unround_threshold = 1.5, #discard less round than this..
-
-                #less conservative
-                # lum_pthresh = 96,
-                # unround_threshold = 2.0,
-                #95, 1.5 also works
-
-                # bloop /oneb -- roughly 10k or 20k is a good number?
-                lum_pthresh = 99.5,
-                unround_threshold = 2.5,
+                lum_pthresh = 95,
+                unround_threshold = 1.5,
             )):
 
         self.work_dir = work_dir
@@ -60,12 +51,13 @@ class Detector:
 
         fitted = []
 
-        from pathos.pools import ProcessPool 
-        pool = ProcessPool(nodes=8)
-        fitted = pool.map( utils.fit_gauss_elliptical, patches[...,0] )
+        # from pathos.pools import ProcessPool 
+        # pool = ProcessPool(nodes=10)
+        # fitted = pool.map( utils.fit_gauss_elliptical, patches[...,0] )
         
-        # for i, (candidate, patch) in tenumerate(tzip(candidates, patches)):
-        #     fitted.append( utils.fit_gauss_elliptical(patch[...,0]) )
+        #for i, (candidate, patch) in enumerate(tzip(candidates, patches)):
+        for i, (candidate, patch) in enumerate(zip(candidates, patches)):
+            fitted.append( utils.fit_gauss_elliptical(patch[...,0]) )
 
         fitted = np.stack(fitted, axis = 0) #Nx7 now
 
@@ -75,7 +67,8 @@ class Detector:
         std = ((sx+sy)/2.0)
 
         # luma = std * scale
-        brightness = std * fitted[:,1]
+        # brightness = std * fitted[:,1]
+        brightness = fitted[:,1] #ignore the std...
         
         balls = cat((centers, brightness[:,None], std[:,None]), axis = 1)
         
@@ -137,4 +130,4 @@ class Detector:
         balls = self('test_data/m42r/IMG_0750.CR2')
 
 if __name__ == '__main__':
-    Detector().test()
+    Detector(params = config.detection_params).test()
