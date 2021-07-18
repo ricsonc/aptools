@@ -2,6 +2,18 @@ from munch import Munch as M
 
 cores = 20
 
+demosaic_params = M(
+    # at most one of use_flat or use_lens_profile should be True
+    # strongly recommended to have at least 1 be True
+    use_flat = False,
+    use_lens_profile = True,
+    alg = 'DCB', #alternatively, use LMMSE
+
+    camera = 'auto', # alternatively, specify something like "Canon EOS 6D Mark II"
+    lens_make = 'auto', # alternatively, specify somnething like 'Nikon'
+    lens = 'Canon EF 70-200mm f/2.8L IS II USM', #'Nikkor 80-200mm f/2.8 ED',
+)
+
 detection_params = M(
     Nsig = 3, # number of kernel sizes to try 
     min_sig = 1.0, # smallest kernel in px/std

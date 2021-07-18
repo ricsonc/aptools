@@ -1,4 +1,5 @@
 import numpy as np
+from glob import glob
 import scipy as sp
 from munch import Munch as M
 from ipdb import set_trace as st
@@ -8,11 +9,12 @@ from scipy import spatial
 from common import *
 import exifread
 import rawpy
-# import lensfunpy
+import lensfunpy
 # from lensfunpy.util import remapScipy
 import os
 from scipy.optimize import leastsq, least_squares
 from tqdm import tqdm
+import config
 
 def prepare_dark(paths):
     darks = np.stack([x.raw_image for x in mmap(rawpy.imread, paths)], axis=0).mean(axis=0)
@@ -31,11 +33,7 @@ def load_raw(path, profile=True, fmul = 4.0):
     path_ = path.replace('raw', 'demosaic')+'.npy'
     if os.path.exists(path_):
         return np.load(path_)
-    
-    #output: 16 bit HWC
-    with open(path, 'rb') as f:
-        tags = exifread.process_file(f)
-        
+          
     raw = rawpy.imread(path)
 
     #try to load dark frame
@@ -54,9 +52,9 @@ def load_raw(path, profile=True, fmul = 4.0):
         #avoid underflow with this trick
         raw_data = np.minimum(raw_data, raw_data-dark)
 
+    alg = getattr(rawpy.DemosaicAlgorithm, config.demosaic_params.alg)
     demosaiced = raw.postprocess(rawpy.Params(
-        # demosaic_algorithm = rawpy.DemosaicAlgorithm.DCB,
-        demosaic_algorithm = rawpy.DemosaicAlgorithm.LMMSE,
+        demosaic_algorithm = alg,
         use_camera_wb = False,
         use_auto_wb = False,
         output_bps = 16,
@@ -66,56 +64,64 @@ def load_raw(path, profile=True, fmul = 4.0):
         user_flip = 0,
     )) / 65535.0
 
-    if not profile: #debug mostly
+    if not profile: #skip vignetting correction
         return demosaiced
 
-    if load_raw.cache2 is None:
-        workdir = path.split('/')[0]
-        flat_path = f'{workdir}/flat.npy'
-        if os.path.exists(flat_path):
-            print('LOADING FLAT')
-            load_raw.cache2 = np.load(flat_path)
-        else:
-            assert False, 'probably need a flat file?'
-
-    flat = load_raw.cache2
-    if flat is not None:
+    if config.demosaic_params.use_flat:
+        if load_raw.cache2 is None:
+            workdir = path.split('/')[0]
+            flat_path = f'{workdir}/flat.npy'
+            if os.path.exists(flat_path):
+                print('LOADING FLAT')
+                load_raw.cache2 = np.load(flat_path)
+            else:
+                assert False, 'probably need a flat file?'
+                
+        flat = load_raw.cache2
         demosaiced /= flat
-        demosaiced = np.clip(demosaiced, 0.0, 1.0)
-        
+    
+    if config.demosaic_params.use_lens_profile:
+        if load_raw.cache3 is None:
+            with open(path, 'rb') as f:
+                tags = exifread.process_file(f)
+
+            H,W,_ = demosaiced.shape
+
+            db = lensfunpy.Database(paths=[path for path in glob('lensfun_db/*') if path.endswith('.xml')])
+            camera_maker = tags['Image Make'].values
+            camera_name = (
+                tags['Image Model'].values
+                if config.demosaic_params.camera == 'auto'
+                else config.demosaic_params.camera
+            )
+            cam = db.find_cameras(camera_maker, camera_name)[0]
+            lens_maker = (
+                camera_maker
+                if config.demosaic_params.lens_make == 'auto'
+                else config.demosaic_params.lens_make
+            )
+            lens = db.find_lenses(cam, lens_maker, config.demosaic_params.lens)[0]
+            print(f'Found profile for {cam} and {lens}')
+
+            load_raw.cache3 = mod = lensfunpy.Modifier(lens, cam.crop_factor, W, H)
+            mod.initialize(
+                float(tags['EXIF FocalLength'].values[0]),
+                float(tags['EXIF FNumber'].values[0]),
+                1000.0,
+                pixel_format = np.float64
+            )
+
+        mod = load_raw.cache3
+        status = mod.apply_color_modification(demosaiced)
+        assert status
+
+    demosaiced = np.clip(demosaiced, 0.0, 1.0)    
     np.save(path_, demosaiced.astype(np.float32))
     return demosaiced
     
-    #ignore below... i didn't have much success using lensfunpy
-    
-    # # correct for lens distortion .. NOT IMPLEMENTED    
-    # H,W,_ = demosaiced.shape
-    # db = lensfunpy.Database()
-    # cam = db.find_cameras(tags['Image Make'].values, tags['Image Model'].values)[0]
-    # lens = db.find_lenses(cam, 'Nikon', 'Nikkor 80-200mm f/2.8 ED')[0]
-
-    # mod = lensfunpy.Modifier(lens, cam.crop_factor, W, H)
-    # mod.initialize(
-    #     float(tags['EXIF FocalLength'].values[0]),
-    #     float(tags['EXIF FNumber'].values[0]),
-    #     1000.0,
-    #     pixel_format = np.float64
-    # )
-
-    # # # remapScipy(??, mod.apply_geometry_distortion()) #<- geom correction -- let's not bother
-    # # st()
-    # status = mod.apply_color_modification(demosaiced)
-    # assert status
-    # # st()
-
-    # #i think clipping here is "acceptable"
-    # demosaiced = np.clip(demosaiced, 0.0, 1.0)
-    
-    # np.save(path_, demosaiced)
-    # return demosaiced
-
 load_raw.cache = None
 load_raw.cache2 = None
+load_raw.cache3 = None
 
 def luminance(img): #from linear components
     return color.rgb2gray(img)[...,None]
