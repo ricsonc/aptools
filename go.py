@@ -40,10 +40,12 @@ if __name__ == '__main__':
         #need the `discard` to avoid leaking memory
         
     elif cmd == 'detect':
-        det = Detector(work_dir)
+        det = Detector(work_dir, params=config.detection_params)
         from pathos.pools import ProcessPool 
         pool = ProcessPool(nodes=config.cores)
         pool.map( discard(det), files_in(work_dir, 'raw') )
+        # for x in files_in(work_dir, 'raw'):
+        #     det(x)
         
     elif cmd == 'register':
         Register(work_dir, params = config.registration_params)(files_in(work_dir, 'detections'))

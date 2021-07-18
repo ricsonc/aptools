@@ -21,10 +21,10 @@ detection_params = M(
 
     # only consider star candidates above this percentile of pixel luminosity
     # 99.5 good for HA images, 99 for dark skies, 90 for typical use
-    lum_pthresh = 90,
+    lum_pthresh = 99.5,
 
     # only consider candidates with an aspect ratio of no more than
-    unround_threshold = 1.5,
+    unround_threshold = 2,
 )
 
 registration_params = M(

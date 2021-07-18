@@ -3,14 +3,17 @@ import numpy as np
 from glob import glob
 import os
 
-def scatter(yx):
-    plt.scatter(yx[...,1], yx[...,0], s=1, c='red')
+def scatter(yx, ax=None):
+    p = ax if ax is not None else plt
+    p.scatter(yx[...,1], yx[...,0], s=1, c='red')
 
-def scatterk(yx, **kwargs):
-    plt.scatter(yx[...,1], yx[...,0], s=4, **kwargs)
+def scatterk(yx, ax=None, **kwargs):
+    p = ax if ax is not None else plt    
+    p.scatter(yx[...,1], yx[...,0], s=4, **kwargs)
 
-def scatterr(yxr):
-    plt.scatter(yxr[...,1], yxr[...,0], s=20*yxr[...,2], linewidth=1, facecolors='none', edgecolors='r')
+def scatterr(yxr, ax=None):
+    p = ax if ax is not None else plt    
+    p.scatter(yxr[...,1], yxr[...,0], s=20*yxr[...,2], linewidth=1, facecolors='none', edgecolors='r')
 
 def imshow(x, ax = None, **kwargs):
     if ax:

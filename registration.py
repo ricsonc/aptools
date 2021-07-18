@@ -88,11 +88,13 @@ class Register:
         tri_ratio = tri_ratio[valid]
         tri_index = tri_index[valid]
         
-        #let's plot them to make sure we're doing sane things...
-        # scatter(pts)
+        # visualize trangles 
+        # ax = plt.axes()
+        # scatter(pts, ax)
         # tripaths = mmap(lambda tri: mpl.path.Path(pts[tri][:,::-1], closed=False), tri_index)
         # patches = mpl.collections.PathCollection(tripaths, linewidths=0.1, facecolors='none')
-        # plt.axes().add_artist(patches); plt.show()
+        # ax.add_artist(patches)
+        # plt.show()
 
         print(f'{tri_ratio.shape[0]} triangles generated')
         return M(ratio = tri_ratio, index = tri_index)
@@ -103,7 +105,7 @@ class Register:
 
         # scatterk(source_tris.ratio, c='red')
         # scatterk(target_tris.ratio, c='blue')
-        # st()
+        # plt.show()
 
         matches = utils.nearby_pairs(source_tris.ratio, target_tris.ratio, self.epsilon)
         print(f'{matches.shape[0]} triangle correspondences found')
@@ -169,11 +171,13 @@ class Register:
         source_matched = source[matches[...,0]]
         target_matched = target[matches[...,1]]
 
-        # scatterk(source_matched, c='red')
-        # scatterk(target_matched, c='blue')
+        # ax = plt.axes()
+        # scatterk(source_matched, c='red', ax=ax)
+        # scatterk(target_matched, c='blue', ax=ax)
         # corresp = mmap(lambda st: mpl.path.Path(np.stack(st,axis=0)[:,::-1]), zip(source_matched, target_matched))
         # patches = mpl.collections.PathCollection(corresp, linewidths=1, facecolors='none', alpha=0.5)
-        # plt.axes().add_artist(patches); plt.show()
+        # ax.add_artist(patches)
+        # plt.show()
         # st()
 
         #this step fits a linear transform and discards outliers
