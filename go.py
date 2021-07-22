@@ -21,9 +21,12 @@ if __name__ == '__main__':
     if cmd == 'setup':
         for subdir in ['dark', 'raw', 'detections', 'warped', 'stacked', 'registration', 'demosaic']:
             ensure(f'{work_dir}/{subdir}')
-            
+
     elif cmd == 'dark':
         utils.prepare_dark(files_in(work_dir, 'dark'))
+
+    elif cmd == 'hotpixels':
+        utils.find_hotpixels(files_in(work_dir, 'raw'))
 
     elif cmd == 'flat':
         utils.generate_flat(files_in(work_dir, 'flats'))
@@ -72,4 +75,4 @@ if __name__ == '__main__':
         Postprocessor(work_dir, params = config.postprocess_params)(f'{work_dir}/stacked/out.tiff')
         
     else:
-        raise Exception("unknown command")
+        raise Exception(f"unknown command {cmd}")

@@ -113,4 +113,3 @@ class Warp:
         else:
             #no warping needed for ref frame
             self.save(raw, raw_path)
-

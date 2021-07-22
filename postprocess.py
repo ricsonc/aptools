@@ -271,9 +271,10 @@ class Postprocessor:
             xc_crop = xc[miny:maxy,minx:maxx]
         elif self.output_border is not None and self.excl_box is not None:
             miny, maxy, minx, maxx = self.excl_box
+            H,W,_ = xc.shape
             xc_crop = xc[
-                miny-self.output_border:maxy+self.output_border,
-                minx-self.output_border:maxx+self.output_border
+                max(miny-self.output_border,0):min(maxy+self.output_border,H),
+                max(minx-self.output_border,0):min(maxx+self.output_border,W),
             ]
         else:
             xc_crop = xc

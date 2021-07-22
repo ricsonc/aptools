@@ -82,7 +82,7 @@ I suspect that since estimating flow on natural photographs with handshake and f
 
 ## Postprocessing
 
-The first step in postprocessing (`post`) is to remove any remastering nusiance patterns in the data, mainly light pollution, also known as "background gradient". In order to do this, I mark all "bright" regions of the image as invalid, and run a large stride+dilation median filter over the entire image. There is also a user specifiable bbox of pixels to ignore. I interpolate the result over the entire image, and the result is a pretty good "background" field, with no stars or objects of interest. 
+The first step in postprocessing (`post`) is to remove any remaining nusiance patterns in the data, mainly light pollution, also known as "background gradient". In order to do this, I mark all "bright" regions of the image as invalid, and run a large stride+dilation median filter over the entire image. There is also a user specifiable bbox of pixels to ignore. I interpolate the result over the entire image, and the result is a pretty good "background" field, with no stars or objects of interest. 
 
 <img src="https://github.com/ricsonc/aptools/blob/master/readme_imgs/gradient.png" width="500">
 Contours of the estimated nusiance RGB gradient. (Note -- this image is out of date, new gradient method is much better).

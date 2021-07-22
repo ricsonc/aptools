@@ -9,6 +9,7 @@ from scipy import spatial
 from common import *
 import exifread
 import rawpy
+from rawpy import enhance
 import lensfunpy
 # from lensfunpy.util import remapScipy
 import os
@@ -19,6 +20,7 @@ import config
 def prepare_dark(paths):
     darks = np.stack([x.raw_image for x in mmap(rawpy.imread, paths)], axis=0).mean(axis=0)
 
+    #darks = darks[100:-100,100:-100]
     mu = np.median(darks)
     std = darks.std()
     #center -1 to +1 std between 0 and 1
@@ -45,12 +47,21 @@ def load_raw(path, profile=True, fmul = 4.0):
             #being very careful here -- need to multiply by 4 because we're going from 14 to 16 bits
             load_raw.cache = (np.load(dark_path)*fmul).astype(np.uint16)
 
+    if load_raw.bad_pixels is None:
+        workdir = path.split('/')[0]
+        bad_pixels_path = f'{workdir}/bad_pixels.npy'
+        if os.path.exists(bad_pixels_path):
+            print('LOADING bad pixels')
+            load_raw.bad_pixels = np.load(bad_pixels_path)
 
+    if load_raw.bad_pixels is not None:
+        enhance.repair_bad_pixels(raw, load_raw.bad_pixels)
+            
     dark = load_raw.cache
     if dark is not None:
         raw_data = raw.raw_image
         #avoid underflow with this trick
-        raw_data = np.minimum(raw_data, raw_data-dark)
+        raw = np.minimum(raw_data, raw_data-dark)
 
     alg = getattr(rawpy.DemosaicAlgorithm, config.demosaic_params.alg)
     demosaiced = raw.postprocess(rawpy.Params(
@@ -122,6 +133,7 @@ def load_raw(path, profile=True, fmul = 4.0):
 load_raw.cache = None
 load_raw.cache2 = None
 load_raw.cache3 = None
+load_raw.bad_pixels = None
 
 def luminance(img): #from linear components
     return color.rgb2gray(img)[...,None]
@@ -360,3 +372,9 @@ def generate_flat(files):
     plt.scatter(r, gt[:,1], c='green', s=1, alpha=0.1)
     plt.scatter(r, gt[:,2], c='blue', s=1, alpha=0.1)
     plt.show()
+
+def find_hotpixels(paths):
+    bad_pixels = enhance.find_bad_pixels(paths, find_hot=True, find_dead=True)
+    print(f'found {len(bad_pixels)} bad pixels')
+    workdir = paths[0].split('/')[0]    
+    np.save(f'{workdir}/bad_pixels.npy', bad_pixels)

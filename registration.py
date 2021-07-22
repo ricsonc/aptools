@@ -184,11 +184,14 @@ class Register:
         source_lin, target_lin, T = self.ransac_linear(source_matched, target_matched)
 
         # source_at_target = dehom(hom(source_lin) @ T)
-        # scatterk(source_at_target, c='red')
-        # scatterk(target_lin, c='blue')
+        # ax = plt.axes()
+        # scatterk(source_at_target, c='red', ax=ax)
+        # scatterk(target_lin, c='blue', ax=ax)
         # corresp = mmap(lambda st: mpl.path.Path(np.stack(st,axis=0)[:,::-1]), zip(source_at_target, target_lin))
         # patches = mpl.collections.PathCollection(corresp, linewidths=1, facecolors='none', alpha=0.5)
-        # plt.axes().add_artist(patches); plt.axes().set_aspect('equal'); plt.show()
+        # ax.add_artist(patches);
+        # ax.set_aspect('equal')
+        # plt.show()
         # st()
 
         return cat((source_lin, target_lin), axis=1) #Nx4
